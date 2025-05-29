@@ -1,75 +1,242 @@
 'use client';
 
-import Image from 'next/image';
-import { motion } from 'framer-motion';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { Text, OrbitControls, Effects } from '@react-three/drei';
+import { EffectComposer, Bloom } from '@react-three/postprocessing';
+import { useRef, useState, useEffect } from 'react';
+import * as THREE from 'three';
 
-const NUM_IMAGES = 500;
+const NUM_TEXTS = 150;
+const NUM_HEARTS = 50;
+const SPREAD_FACTOR = 15; // Increased spread
+const NUM_SPARKLES = 120;
+const NUM_PETALS = 30;
 
 const getRandom = (min, max) =>
   Math.floor(Math.random() * (max - min) + min);
 
-export default function HomePage() {
-  const images = Array.from({ length: NUM_IMAGES });
+const HeartShape = () => {
+  const heartShape = new THREE.Shape();
+  const x = 0, y = 0;
+  heartShape.moveTo(x + 0.5, y + 0.5);
+  heartShape.bezierCurveTo(x + 0.5, y + 0.5, x + 0.4, y, x, y);
+  heartShape.bezierCurveTo(x - 0.6, y, x - 0.6, y + 0.7, x - 0.6, y + 0.7);
+  heartShape.bezierCurveTo(x - 0.6, y + 1.1, x - 0.3, y + 1.54, x + 0.5, y + 1.9);
+  heartShape.bezierCurveTo(x + 1.2, y + 1.54, x + 1.6, y + 1.1, x + 1.6, y + 0.7);
+  heartShape.bezierCurveTo(x + 1.6, y + 0.7, x + 1.6, y, x + 1, y);
+  heartShape.bezierCurveTo(x + 0.7, y, x + 0.5, y + 0.5, x + 0.5, y + 0.5);
 
   return (
-    <div style={{ position: 'relative', height: '100vh', overflow: 'hidden', backgroundColor: '#f0f8ff' }}>
-      {images.map((_, index) => {
-        const left = getRandom(0, 100); // % from left
-        const delay = getRandom(0, 5); // s
-        const duration = getRandom(4, 10); // s
-        const size = getRandom(40, 80); // px
+    <mesh rotation={[Math.PI, 0, 0]}>
+      <shapeGeometry args={[heartShape]} />
+      <meshPhongMaterial
+        color="red"
+        side={THREE.DoubleSide}
+        emissive="#ff0000"
+        emissiveIntensity={0.5}
+        transparent
+        opacity={0.8}
+      />
+    </mesh>
+  );
+};
 
-        const rotateDuration = getRandom(5, 15); // s
+const StarField = () => {
+  const count = 2000;
+  const [positions] = useState(() => {
+    const positions = new Float32Array(count * 3);
+    for (let i = 0; i < count * 3; i += 3) {
+      positions[i] = (Math.random() - 0.5) * 100;
+      positions[i + 1] = (Math.random() - 0.5) * 100;
+      positions[i + 2] = (Math.random() - 0.5) * 100;
+    }
+    return positions;
+  });
 
-        return (
-          <motion.div
-            key={index}
-            initial={{ y: -100 }}
-            animate={{
-              y: '110vh',
-              rotateX: [0, 360],
-              rotateY: [0, 360],
-              rotateZ: [0, 360],
-            }}
-            transition={{
-              y: {
-                delay,
-                duration,
-                repeat: Infinity,
-                repeatType: 'loop',
-                ease: 'linear'
-              },
-              rotateX: {
-                duration: rotateDuration,
-                repeat: Infinity,
-                ease: 'linear'
-              },
-              rotateY: {
-                duration: rotateDuration,
-                repeat: Infinity,
-                ease: 'linear'
-              },
-              rotateZ: {
-                duration: rotateDuration,
-                repeat: Infinity,
-                ease: 'linear'
-              },
-            }}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: `${left}%`,
-              width: size,
-              height: size,
-              pointerEvents: 'none',
-              transformStyle: 'preserve-3d',
-              perspective: 1000,
-            }}
+  return (
+    <points>
+      <bufferGeometry>
+        <bufferAttribute
+          attachObject={['attributes', 'position']}
+          count={positions.length / 3}
+          array={positions}
+          itemSize={3}
+        />
+      </bufferGeometry>
+      <pointsMaterial
+        size={0.1}
+        color="#ffffff"
+        transparent
+        opacity={0.8}
+        sizeAttenuation
+      />
+    </points>
+  );
+};
+
+const LoveSparkles = () => {
+  const sparklesRef = useRef();
+
+  useFrame((state) => {
+    sparklesRef.current.children.forEach((sparkle) => {
+      sparkle.rotation.y += 0.01;
+      sparkle.position.y += Math.sin(state.clock.elapsedTime + sparkle.position.x) * 0.01;
+    });
+  });
+
+  return (
+    <group ref={sparklesRef}>
+      {Array.from({ length: NUM_SPARKLES }).map((_, i) => (
+        <mesh
+          key={i}
+          position={[
+            getRandom(-SPREAD_FACTOR, SPREAD_FACTOR),
+            getRandom(-SPREAD_FACTOR, SPREAD_FACTOR),
+            getRandom(-SPREAD_FACTOR, SPREAD_FACTOR)
+          ]}
+          scale={[0.1, 0.1, 0.1]}
+        >
+          <sphereGeometry args={[1, 8, 8]} />
+          <meshPhongMaterial
+            color="#ff69b4"
+            emissive="#ff1493"
+            emissiveIntensity={2}
+            transparent
+            opacity={0.6}
+          />
+        </mesh>
+      ))}
+    </group>
+  );
+};
+
+const Scene = ({ texts }) => {
+  const groupRef = useRef();
+  const heartsRef = useRef();
+
+  useFrame((state) => {
+    // Auto-rotation
+    if (groupRef.current) {
+      groupRef.current.rotation.y += 0.001;
+    }
+
+    // Text animation
+    texts.forEach((text, index) => {
+      const mesh = groupRef.current?.children[index];
+      if (mesh) {
+        mesh.position.y -= 0.02;
+        if (mesh.position.y < -10) mesh.position.y = 10;
+      }
+    });
+
+    if (heartsRef.current) {
+      heartsRef.current.children.forEach((heart) => {
+        heart.rotation.y += 0.02;
+        heart.position.y -= 0.02;
+        if (heart.position.y < -10) heart.position.y = 10;
+      });
+    }
+  });
+
+  return (
+    <>
+      <LoveSparkles />
+      <group ref={groupRef}>
+        {texts.map((text, index) => (
+          <Text
+            key={`text-${index}`}
+            position={text.position}
+            fontSize={text.size}
+            color="white"
+            anchorX="center"
+            anchorY="middle"
+            maxWidth={2}
+            textAlign="center"
+            outlineWidth={0.02}
+            outlineColor="#000000"
+            castShadow
+            receiveShadow
           >
-            <Image src="/images/aa.jpeg" alt="falling" width={size} height={size} />
-          </motion.div>
-        );
-      })}
+            {text.content}
+          </Text>
+        ))}
+      </group>
+      <group ref={heartsRef}>
+        {Array.from({ length: NUM_HEARTS }).map((_, index) => (
+          <group
+            key={`heart-${index}`}
+            position={[
+              getRandom(-SPREAD_FACTOR, SPREAD_FACTOR),
+              getRandom(5, 25),
+              getRandom(-SPREAD_FACTOR, SPREAD_FACTOR)
+            ]}
+            scale={[0.3, 0.3, 0.3]}
+          >
+            <HeartShape />
+          </group>
+        ))}
+      </group>
+    </>
+  );
+};
+
+export default function HomePage() {
+  const [texts, setTexts] = useState([]);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    const generatedTexts = Array.from({ length: NUM_TEXTS }).map(() => ({
+      content: ['I love you', 'Mai Anh', '21-01-2003', '我爱你'][getRandom(0, 4)] || 'I love you',
+      position: [
+        getRandom(-SPREAD_FACTOR, SPREAD_FACTOR), // wider X spread
+        getRandom(5, 25), // higher Y spread
+        getRandom(-SPREAD_FACTOR, SPREAD_FACTOR) // deeper Z spread
+      ],
+      size: getRandom(0.8, 1.2), // Increased text size
+    }));
+    setTexts(generatedTexts);
+    setIsLoaded(true);
+  }, []);
+
+  if (!isLoaded) {
+    return <div>Loading...</div>;
+  }
+
+  return (
+    <div style={{ width: '100vw', height: '100vh', background: '#000000' }}>
+      <Canvas
+        camera={{
+          position: [0, 0, 15],
+          fov: 75,
+          near: 0.1,
+          far: 1000
+        }}
+        shadows
+      >
+        <color attach="background" args={['#000000']} />
+        <fogExp2 attach="fog" args={['#000000', 0.001]} />
+        <StarField />
+        <ambientLight intensity={0.2} />
+        <pointLight position={[10, 10, 10]} intensity={1} />
+        <Scene texts={texts} />
+        <OrbitControls
+          enableZoom={true}
+          minDistance={5}
+          maxDistance={50}
+          enableDamping={true}
+          dampingFactor={0.05}
+          rotateSpeed={0.5}
+          zoomSpeed={0.8}
+        />
+        <EffectComposer>
+          <Bloom
+            intensity={3}
+            luminanceThreshold={0.1}
+            luminanceSmoothing={0.9}
+            radius={1}
+          />
+        </EffectComposer>
+      </Canvas>
     </div>
   );
 }
